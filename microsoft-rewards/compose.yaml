@@ -1,0 +1,26 @@
+services:
+  rewards-sync:
+    image: node:22-alpine
+    working_dir: /app
+    command: ["node", "rewards-sync.js"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      REWARDS_SYNC_KEY: "${REWARDS_SYNC_KEY:?Set a dedicated random key of at least 32 characters}"
+      REWARDS_SYNC_HOST: "0.0.0.0"
+      REWARDS_SYNC_PORT: "8787"
+      REWARDS_ALLOW_HTTP: "1"
+      REWARDS_DATA_DIR: "/data"
+    volumes:
+      - "./:/app:ro"
+      - "./data:/data"
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"

@@ -1,0 +1,183 @@
+Microsoft Rewards 全功能青龙适配 v1.0.0
+修改日期：2026-11-07
+
+一、交付内容与功能
+
+rewards.js                 青龙任务入口
+rewards-common.js          HTTP、Cookie、OAuth、持久化和进程锁
+rewards-sync.js            常驻凭据同步服务
+rewards-helper.user.js     浏览器 ScriptCat 助手
+rewards.test.js            离线测试，不使用真实账号
+compose.yaml              可选的独立同步服务 Docker 模板
+LICENSE                   GPL v3 原文
+
+覆盖原3947脚本的PC搜索、手机搜索、每日/更多活动、App签到、阅读活动上报、热词和成功心跳推送。
+新增自动Cookie同步、独立OAuth授权、Refresh Token轮换、401刷新重试、进程锁和任务结果存档。
+为单账号实现。浏览器Bing登录与App授权必须使用同一账号，目前不自动核验两端账号身份。
+该版本根据原脚本接口适配；不模拟测验答题，也没有真正打开文章。交互型活动可能需人工。
+
+二、运行要求
+
+服务端及青龙任务运行环境：Node.js 22 或更新版本，无需安装npm包或浏览器。
+浏览器：ScriptCat，支持GM_cookie与GM.setValue；需要授予Cookie读取及桥接目标域名连接权限。
+浏览器与青龙可以不在同一台设备。同步服务需要浏览器可达。
+浏览器初次登录/微软二次验证仍由本人完成，不采集账号密码。
+不要同时运行原3947/3956与本套任务，避免重复操作及原助手清除OAuth回调参数。
+
+三、推荐部署：同步服务独立容器，青龙共享同一凭据目录
+
+以下为通用部署模板，需按实际目录和反向代理环境配置。
+
+1. 将本目录完整放入一个持久化服务目录。保持3个服务端js同目录。
+   在该目录的shell设置专用密钥（不是微软密码，也不是青龙管理密钥）：
+
+   export REWARDS_SYNC_KEY="$(openssl rand -hex 32)"
+   docker compose up -d
+
+   需将生成的同一个密钥妥善保存，用于助手配置和下次重建容器。
+   更推荐写入权限600的部署环境文件。模板不自带真实密钥，不会自动生成授权。
+
+2. compose默认仅将8787发布到服务器127.0.0.1。
+   用现有HTTPS反向代理将一个你控制的域名根路径转发到127.0.0.1:8787。
+   本服务未实现TLS；HTTPS由反向代理终止，内部HTTP由模板显式允许。
+   助手不接受包含子路径的桥接地址，请使用独立子域名。
+   若采用可信局域网HTTP，可将端口绑定中的127.0.0.1改为该服务器局域网IP。
+   助手会要求确认明文内网传输。不要将8787明文端口暴露到公网。
+
+3. 将run.sh、rewards.js和rewards-common.js复制到青龙脚本的同一个子目录。
+   将本目录的data目录以可读写方式挂载到青龙容器，例如容器内 /ql/data/rewards-data。
+   青龙环境变量添加：
+
+   REWARDS_DATA_DIR=/ql/data/rewards-data
+
+   关键是两个容器必须共享同一个底层目录，而不是分别创建相同名称的空目录。
+   如果两端用户不同，需要对齐运行UID/目录权限；凭据文件默认600、目录700，避免放宽到777。
+   本模板node容器使用镜像默认UID；安装时应按现有青龙运行UID调整，具体依实际容器确定。
+
+4. 青龙新增普通定时任务，执行命令：
+
+   task <你的脚本子目录>/run.sh
+
+   run.sh等待Cookie及App凭据齐备后才启动任务，并加载/ql/data/config/config.sh。
+
+   定时表达式（5段）：
+
+   7,27,47 * * * *
+
+   如当前青龙调度器要求6段（含秒），使用：
+
+   0 7,27,47 * * * *
+
+   根据实际青龙版本选择格式，已验证青龙2.23.0可使用上述5段表达式。
+   不要给rewards-sync.js设置每20分钟定时启动；它是独立常驻服务。
+
+四、不使用Docker的部署方式
+
+在服务端持久进程管理器中启动，配置环境变量：
+REWARDS_SYNC_KEY=<至少32个字符的专用随机密钥>
+REWARDS_DATA_DIR=<绝对数据目录>
+REWARDS_SYNC_HOST=127.0.0.1
+REWARDS_SYNC_PORT=8787
+
+启动命令：node /绝对路径/rewards-sync.js
+
+如需监听非回环地址，还需REWARDS_ALLOW_HTTP=1，并用HTTPS反代或可信内网传输。
+青龙任务设置相同REWARDS_DATA_DIR，必须读写同一数据目录。
+不要假定青龙环境变量会自动进入另一个独立同步进程；须分别配置。
+
+五、浏览器一次性设置
+
+1. 将rewards-helper.user.js安装到ScriptCat。关闭原3947与3956，登录Rewards账号。
+2. 在Bing或Rewards页面打开本助手菜单：配置桥接 URL 和专用同步密钥。
+   填写 https://你的桥接域名 或已配置的可信内网 http://IP:8787。
+   密钥填写服务端REWARDS_SYNC_KEY。
+3. 授予Cookie和目标域名连接权限，点击“立即同步 Bing Cookie”。
+4. 点击“首次 / 重新授权 Rewards App”，在微软页面用同一账号登录/同意授权。
+   回调校验随机state后发送code，服务端交换令牌；页面提示授权已同步。
+5. 若网络问题导致授权同步失败，可保持回调页打开，点击“重试本页 App 授权同步”。
+   刷新回调页或超过10分钟后需要重新发起授权。
+
+助手在匹配的Bing/Rewards标签页加载时及每15分钟检查一次，Cookie改变时同步。
+Cookie未变也会每1小时强制重传一次，防止服务端重建后缺凭据。
+这是页面脚本：关闭所有匹配标签页后，不会继续15分钟采集；可保留一个页面。
+浏览器关闭后，青龙仍可使用已同步Cookie；不能从关闭的浏览器读取新的Cookie。
+App访问令牌由服务端按需刷新，不需要浏览器保持运行；刷新授权撤销时重新授权。
+
+六、首次验证
+
+在青龙实际运行环境执行（不提交签到、搜索或活动）：
+
+   node /你的脚本路径/rewards.js --check
+
+预期看到“网页会话有效”和“App令牌和查询接口有效”。
+之后手动运行一次正常任务，再开启定时。
+--check会查询接口，并可能刷新/轮换App令牌及保存服务端Set-Cookie。
+健康检查 GET /health 仅说明同步服务在线，不证明微软登录仍有效。
+
+七、可选环境变量（青龙任务）
+
+REWARDS_APP              默认1；设0关闭App签到和阅读
+REWARDS_READ             默认1；设0仅关闭阅读
+REWARDS_PROMO            默认1；设0关闭网页每日/更多活动
+REWARDS_SEARCH           默认1；设0关闭PC及手机搜索
+REWARDS_SEARCH_LIMIT     默认6，本轮总搜索请求数；1~200
+REWARDS_SEARCH_INTERVAL  默认15秒，随机±5秒；10~300
+REWARDS_HOT_WORDS        默认1；设0使用内置词库
+REWARDS_HOT_URL          可选首选接口完整URL；HTTPS JSON，code=200且data数组内有有效title字段
+                        未设置时优先https://hotapi.nntool.cc/baidu；失败依次尝试baiwumm、
+                        cnxiaobai、eray、zhusun、imsyy的原脚本API。每个接口超时5秒。
+                        自定义URL失败也会尝试上述接口；全部失败才使用36条内置词。
+                        日志显示成功来源与去重后的词条数量；不向热词接口发送账号凭据。
+REWARDS_KEYWORDS         自定义搜索词，以 | 分隔；设置后优先于热词
+REWARDS_MOBILE_UA        可覆盖手机User-Agent
+REWARDS_PUSH_URL         可选HTTPS成功心跳URL；全部启用任务done时才GET；关闭项除外
+REWARDS_NOTIFY          直接node运行默认0；run.sh默认1，使用企业微信应用通知
+REWARDS_QYWX_AM         可选任务专用企业微信配置；未设置时读取QYWX_AM
+QYWX_AM                 企业ID,应用Secret,接收用户,agentid；接收用户通常为@all
+                        只在本机环境或青龙配置文件填写，切勿提交真实Secret。
+REWARDS_REFRESH_TOKEN   可选首次手动导入旧Refresh Token；持久化令牌存在时优先用持久化值
+
+所有布尔开关使用1或0。启用通知需自行配置企业微信应用。
+通知策略：一般任务失败会通知；网页登录/App授权失效当日同类告警一次；
+首次全部完成时通知一次并持久去重，发送失败不标记成功；pending不触发普通通知。
+本轮只达到搜索次数上限、连续3次不加分、活动仍未完成时，报告pending，不伪装完成。
+阅读与网页活动没有固定时间门槛，每轮按接口的实际进度执行；已满或已完成时不重复提交，连续无进展时停止本轮。
+签到只在收到合法activity.p后记录当天接口确认，显示的积分不等于独立核实到账。
+其他任务分别等待完成；某任务出错不会阻止其余任务尝试。
+
+八、数据与恢复
+
+credentials.json   Cookie域/path属性、UA、App Token和授权会话标识，600权限；不要分享
+state.json         当天接口确认状态及词库索引
+last-result.json   最近一次任务摘要，无Cookie/Token正文
+*.lock            进程互斥锁，正常退出/任务异常时自动释放
+
+服务被kill -9、容器断电等非正常结束时，锁可能残留。
+本版不会自动抢删旧锁，避免跨进程竞争导致覆盖令牌。
+需要停止同步服务并确认没有rewards任务运行后，人工备份数据并清理确定残留的单个.lock文件，再启动。
+不要在任务运行中清锁。不要把整个凭据目录清空；这会丢失授权。
+更换账号时先暂停任务，用新账号重新同步Cookie并重新App授权；单独数据目录对应一个账号。
+
+九、验证范围与限制
+
+要求Node.js>=22，已在青龙2.23.0/Node.js24环境实际运行。
+14组离线测试通过：Cookie隔离、状态字段校验、重定向与UTF8、实际本机HTTP同步鉴权/OAuth模拟、
+并发持久化/锁、搜索进度、签到校验、阅读/网页活动确认、401刷新、任务隔离、
+多热词接口切换、新版页面凭证、503重试、完成通知去重、上午运行与已满跳过。
+另用虚拟ScriptCat环境验证10项浏览器助手路径：配置保存、HttpOnly采集、登录验证、同步、
+OAuth菜单/state/URL清理以及1小时强制重传，全部通过。
+已进行真实账号联调，验证搜索进度和网页活动积分到账；不代表其它账号或后续接口版本必然有效。
+新版网页活动使用/earn页面内与当前server action配套的活动凭证；
+旧/api/getuserinfo凭证仅用于旧接口，不混用。未完成时明确记录pending。
+接口和账号策略变化时可能无法完成；请求成功不保证积分到账。
+异地出口、自动搜索与活动上报可能被微软限制；这套移植不规避验证码或风控。
+使用原脚本相同的App客户端ID和offer，是否继续支持以真实账号接口响应为准。
+
+十、来源和许可证
+
+https://scriptcat.org/zh-CN/script-show-page/3947 （v3.0.6，geoi6sam1 & Soul233）
+https://scriptcat.org/zh-CN/script-show-page/3956 （v0.3.0，Soul233）
+https://docs.scriptcat.org/docs/dev/api/ （GM_cookie与GM.setValue官方文档）
+
+本交付为修改实现，保留上游协议与作者来源，按GNU GPL v3发布，全文见LICENSE。
+代码按现状提供，无任何可用性、积分收益或账号状态保证。

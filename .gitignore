@@ -1,0 +1,29 @@
+# Runtime credentials and account data
+**/data/
+**/.rewards-data/
+**/credentials.json
+**/state.json
+**/last-result.json
+**/*.lock
+**/*.tmp
+**/*.log
+**/logs/
+
+# Local secrets and deployment files
+.env
+.env.*
+*.env
+!*.env.example
+**/rewards-helper-vps.user.js
+**/deploy-vps.py
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.bak
+
+# Local tooling
+.workbuddy/
+node_modules/
+.DS_Store
+*.zip
