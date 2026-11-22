@@ -9,7 +9,9 @@ const path = require('node:path');
 const net = require('node:net');
 const { createHash, timingSafeEqual } = require('node:crypto');
 
-const BODY_LIMIT = 64 * 1024;
+// 真实 Bing Cookie 集合（50+ 条，含 _U/MSPAuth 等长值）常超过 64KB，
+// 64KB 会把正常同步请求拒成 413。放宽到 512KB。
+const BODY_LIMIT = 512 * 1024;
 const BODY_TIMEOUT = 10_000;
 const RESPONSE_TIMEOUT = 35_000;
 const REPLAY_TTL = 10 * 60_000;
@@ -96,7 +98,7 @@ function readBody(req) {
     }
     function onData(chunk) {
       size += chunk.length;
-      if (size > BODY_LIMIT) return finish(new RequestError(413, '请求体超过 64KB。'));
+      if (size > BODY_LIMIT) return finish(new RequestError(413, '请求体超过 512KB。'));
       chunks.push(chunk);
     }
     function onEnd() {
